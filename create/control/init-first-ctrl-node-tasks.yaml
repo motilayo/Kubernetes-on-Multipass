@@ -1,70 +1,91 @@
 ---
-- name: hold packages
-  shell: apt-mark hold kubelet kubeadm kubectl
+- name: Hold kubeadm
+  ansible.builtin.dpkg_selections:
+    name: kubeadm
+    selection: hold
 
-# - name: kubeadm reset
-#   shell: kubeadm reset --force && kubeadm reset phase cleanup-node
+- name: Hold kubectl
+  ansible.builtin.dpkg_selections:
+    name: kubectl
+    selection: hold
 
-- name: set service account issuer URL fact
-  set_fact:
+- name: Hold kubelet
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+
+- name: Set service account issuer URL fact
+  ansible.builtin.set_fact:
     SA_ISSUER_URL: "{{ config.apiServerConfigurations.saIssuerUrl }}"
 
-- name: check for lb
+- name: Check for lb
   become: false
-  shell: multipass ls | grep loadbalancer > /dev/null 2>&1; echo $?
+  ansible.builtin.shell: set -o pipefail && multipass ls | grep loadbalancer > /dev/null 2>&1; echo $?
   register: LB_EXISTS
   delegate_to: localhost
+  # changed_when: LB_EXISTS.stdout == "1"
 
-- name: set control plane endpoint without loadbalancer
-  set_fact:
+- name: Set control plane endpoint without loadbalancer
+  ansible.builtin.set_fact:
     CTRLPLN_ENDPOINT: "{{ hostvars[groups['control'][0]].ansible_host }}"
   when: LB_EXISTS.stdout == "1"
 
-- name: set control plane endpoint with loadbalancer
-  set_fact:
+- name: Set control plane endpoint with loadbalancer
+  ansible.builtin.set_fact:
     CTRLPLN_ENDPOINT: "{{ hostvars[groups['loadbalancer'][0]].ansible_host }}"
   when: LB_EXISTS.stdout == "0"
 
-- name: set KUBERNETES VERSION in kubeadm config template
-  set_fact:
-    KUBERNETES_VERSION: "1.27.1"
+- name: Set KUBERNETES VERSION in kubeadm config template
+  ansible.builtin.set_fact:
+    KUBERNETES_VERSION: "{{ KUBERNETES_VERSION }}"
 
-- name: render kubeadm-config.yaml
+- name: Render kubeadm-config.yaml
   become: false
-  template:
+  ansible.builtin.template:
     src: ./kubeadm-config-template.j2
     dest: ./kubeadm-config.yaml
 
-- name: initialize the first control node
-  shell: kubeadm init --config=kubeadm-config.yaml --upload-certs
+- name: Kubeadm reset
+  ansible.builtin.shell: kubeadm reset --force && kubeadm reset phase cleanup-node
+- name: Create .kube directory
+  become_user: ubuntu
+  ansible.builtin.file:
+    path: $HOME/.kube
+    state: directory
+    mode: "0755"
+  register: kube_path
+  when: "'control' in group_names"
+
+- name: Initialize the first control node
+  ansible.builtin.command: kubeadm init --config=kubeadm-config.yaml --upload-certs
   register: kubeadm_init
 
-- name: debug kubeadm init
-  debug:
+- name: Debug kubeadm init
+  ansible.builtin.debug:
     msg:
       - "{{ kubeadm_init.stdout }}"
 
-- name: create .kube directory
+- name: Create .kube directory
   become_user: ubuntu
-  file:
+  ansible.builtin.file:
     path: $HOME/.kube
     state: directory
-    mode: 0755
+    mode: "0755"
   register: kube_path
 
-- name: copy admin.conf to .kube dir
-  copy:
+- name: Copy admin.conf to .kube dir
+  ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
-    dest: "{{kube_path.path}}/config"
-    remote_src: yes
+    dest: "{{ kube_path.path }}/config"
+    remote_src: true
     owner: ubuntu
 
 # - name: install Pod network
 #   become: false
 #   shell: kubectl apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
 
-- name: copy admin.conf to local
-  fetch:
+- name: Copy admin.conf to local
+  ansible.builtin.fetch:
     src: /etc/kubernetes/admin.conf
-    dest: "~/.kube/config"
-    flat: yes
+    dest: ~/.kube/config
+    flat: true

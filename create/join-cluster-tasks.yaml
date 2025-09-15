@@ -1,63 +1,74 @@
 ---
-- name: hold packages
-  shell: apt-mark hold kubelet kubeadm kubectl
+- name: Hold kubeadm
+  ansible.builtin.dpkg_selections:
+    name: kubeadm
+    selection: hold
 
-- name: kubeadm reset
-  shell: kubeadm reset --force && kubeadm reset phase cleanup-node
+- name: Hold kubectl
+  ansible.builtin.dpkg_selections:
+    name: kubectl
+    selection: hold
 
-- name: create .kube directory
+- name: Hold kubelet
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+
+- name: Kubeadm reset
+  ansible.builtin.shell: kubeadm reset --force && kubeadm reset phase cleanup-node
+- name: Create .kube directory
   become_user: ubuntu
-  file:
+  ansible.builtin.file:
     path: $HOME/.kube
     state: directory
-    mode: 0755
+    mode: "0755"
   register: kube_path
   when: "'control' in group_names"
 
-- name: get kubeadm certificate key
-  shell: kubeadm certs certificate-key
+- name: Get kubeadm certificate key
+  ansible.builtin.command: kubeadm certs certificate-key
   register: CERT_KEY
   delegate_to: "{{ groups.control[0] }}"
   when: "'control' in group_names"
 
-- name: upload certificate
-  shell: kubeadm init phase upload-certs --upload-certs --certificate-key={{ CERT_KEY.stdout }}
+- name: Upload certificate
+  ansible.builtin.command: kubeadm init phase upload-certs --upload-certs --certificate-key={{ CERT_KEY.stdout }}
   delegate_to: "{{ groups.control[0] }}"
   when: "'control' in group_names"
 
-- name: get join command for control plane nodes
+- name: Get join command for control plane nodes
   become: false
-  shell: kubeadm token create --print-join-command --certificate-key={{ CERT_KEY.stdout }}
+  ansible.builtin.command: kubeadm token create --print-join-command --certificate-key={{ CERT_KEY.stdout }}
   register: JOIN_COMMAND
   delegate_to: "{{ groups.control[0] }}"
   when: "'control' in group_names"
 
-- name: set facts join command
-  set_fact:
+- name: Set facts join command
+  ansible.builtin.set_fact:
     join_command: "{{ JOIN_COMMAND.stdout }}"
   when: "'control' in group_names"
 
-- name: get join command for worker nodes
-  shell: kubeadm token create --print-join-command
+- name: Get join command for worker nodes
+  ansible.builtin.command: kubeadm token create --print-join-command
   register: JOIN_COMMAND
   delegate_to: "{{ groups.control[0] }}"
   when: "'worker' in group_names"
 
-- name: set facts join command
-  set_fact:
+- name: Set facts join command
+  ansible.builtin.set_fact:
     join_command: "{{ JOIN_COMMAND.stdout }}"
   when: "'worker' in group_names"
 
-- name: show join command
-  debug:
+- name: Show join command
+  ansible.builtin.debug:
     msg:
       - "{{ join_command }}"
 
-- name: join cluster
-  shell: "{{ join_command }}"
+- name: Join cluster
+  ansible.builtin.command: "{{ join_command }}"
   register: join_cmd_output
 
-- name: show join cluster
-  debug:
+- name: Show join cluster
+  ansible.builtin.debug:
     msg:
       - "{{ join_cmd_output.stdout }}"

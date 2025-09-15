@@ -1,18 +1,37 @@
+---
+# apt maintenance
 - name: Update and upgrade apt packages
   apt:
-    upgrade: yes
-    update_cache: yes
+    upgrade: true
+    update_cache: true
 
-- name: unhold kubeadm
-  shell: apt-mark unhold kubeadm
+# kube upgrades
+- name: Unhold kubeadm
+  dpkg_selections:
+    name: kubeadm
+    selection: install
+
+- name: Adding apt repository for Kubernetes
+  deb822_repository:
+    name: kubernetes
+    types: deb
+    uris: https://pkgs.k8s.io/core:/stable:/v1.33/deb/
+    suites: [/]
+    state: present
+    enabled: yes
+    architectures: arm64
+    signed_by: https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key
 
 - name: install new kubeadm version
   apt:
-    name: "kubeadm={{ upgrade_version }}-00"
-    allow_downgrade: yes
+    name: kubeadm={{ upgrade_version }}-1.1
+    allow_downgrade: true
+    update_cache: true
 
-- name: hold kubeadm
-  shell: apt-mark hold kubeadm
+- name: Hold kubeadm
+  dpkg_selections:
+    name: kubeadm
+    selection: hold
 
 - name: kubeadm version
   shell: kubeadm version -o yaml
@@ -33,7 +52,7 @@
   when: ansible_hostname == groups.control[0]
 
 - name: kubeadm upgrade first control plane node
-  shell: "kubeadm upgrade apply v{{ upgrade_version }} -y"
+  shell: kubeadm upgrade apply v{{ upgrade_version }} -y
   register: kubeadm_upgrade_first_cp
   when: ansible_hostname == groups.control[0]
 
@@ -47,7 +66,7 @@
   file:
     path: $HOME/.kube
     state: directory
-    mode: 0755
+    mode: "0755"
   register: kube_path
   when: ansible_hostname == groups.control[0]
 
@@ -55,20 +74,20 @@
   copy:
     src: /etc/kubernetes/admin.conf
     dest: "{{kube_path.path}}/config"
-    remote_src: yes
+    remote_src: true
     owner: ubuntu
   when: ansible_hostname == groups.control[0]
 
 - name: copy admin.conf to local
   fetch:
     src: /etc/kubernetes/admin.conf
-    dest: "~/.kube/config"
-    flat: yes
+    dest: ~/.kube/config
+    flat: true
   run_once: true
   when: ansible_hostname == groups.control[0]
 
 - name: kubeadm upgrade node
-  shell: "kubeadm upgrade node"
+  shell: kubeadm upgrade node
   register: kubeadm_upgrade
   when: ansible_hostname != groups.control[0]
 
@@ -88,18 +107,32 @@
       # force: true
       delete_emptydir_data: true
 
-- name: unhold kubelet & kubectl
-  shell: apt-mark unhold kubelet kubectl
+- name: Unhold kubelet
+  dpkg_selections:
+    name: kubelet
+    selection: install
+
+- name: Unhold kubectl
+  dpkg_selections:
+    name: kubectl
+    selection: install
 
 - name: install kubelet & kubectl
   apt:
-    name: 
-      - "kubelet={{ upgrade_version }}-00"
-      - "kubectl={{ upgrade_version }}-00"
-    update_cache: yes
+    name:
+      - kubelet={{ upgrade_version }}-1.1
+      - kubectl={{ upgrade_version }}-1.1
+    update_cache: true
 
-- name: hold kubelet & kubectl
-  shell: apt-mark hold kubelet kubectl
+- name: Hold kubelet
+  dpkg_selections:
+    name: kubelet
+    selection: hold
+
+- name: Hold kubectl
+  dpkg_selections:
+    name: kubectl
+    selection: hold
 
 - name: kubelet version
   shell: kubelet --version
@@ -113,7 +146,7 @@
   pause:
     seconds: 15
   when: ansible_hostname == groups.control[0]
-    
+
 - name: kubectl server version
   become: false
   shell: kubectl version -o yaml
@@ -136,10 +169,10 @@
 
 - name: daemon-reload
   systemd:
-    daemon_reload: yes
+    daemon_reload: true
 
 - name: restart kubelet
-  service: 
+  service:
     name: kubelet
     state: restarted
 
@@ -152,8 +185,8 @@
 
 - name: Remove useless packages from the cache
   apt:
-    autoclean: yes
+    autoclean: true
 
 - name: Remove dependencies that are no longer required
   apt:
-    autoremove: yes
+    autoremove: true

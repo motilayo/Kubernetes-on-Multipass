@@ -13,10 +13,10 @@
   copy:
     src: /etc/haproxy/haproxy.cfg
     dest: ./haproxy/haproxy.cfg
-    remote_src: yes
+    remote_src: true
   when: not cfg_file.stat.exists
 
-- name: create haproxy config 
+- name: create haproxy config
   template:
     src: ./haproxy-cfg-template.j2
     dest: ./haproxy/k8s-haproxy.cfg
@@ -34,7 +34,7 @@
 
 - name: reload haproxy svc
   become: true
-  systemd: 
+  systemd:
     name: haproxy
     state: restarted
-    daemon_reload: yes
+    daemon_reload: true

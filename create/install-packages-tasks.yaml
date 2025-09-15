@@ -1,65 +1,67 @@
 ---
 - name: Install packages that allow apt to be used over HTTPS
-  apt:
+  ansible.builtin.apt:
     name: "{{ packages }}"
     state: present
-    update_cache: yes
+    update_cache: true
   vars:
     packages:
-    - apt-transport-https
-    - ca-certificates
-    - curl
-    - gnupg-agent
-    - software-properties-common
-    - cgroup-tools
-    - python3-kubernetes
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+      - cgroup-tools
+      - python3-kubernetes
 
-- name: Add an apt signing key for Docker
-  apt_key:
-    url: https://download.docker.com/linux/ubuntu/gpg
+- name: Adding apt repository for Docker
+  deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: '{{ ansible_distribution_release }}'
+    components: stable
+    architectures: arm64
     state: present
-
-- name: Add apt repository for stable version
-  apt_repository:
-    repo: deb [arch=arm64] https://download.docker.com/linux/ubuntu lunar stable
-    state: present
+    enabled: yes
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
 
 - name: Install containerd
-  apt: 
-    name: "containerd.io=1.6.21-1"
+  ansible.builtin.apt:
+    name: containerd.io=1.7.27-1
     state: present
-    update_cache: yes
-
-- name: Add an apt signing key for Kubernetes
-  apt_key:
-    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
-    state: present
+    update_cache: true
 
 - name: Adding apt repository for Kubernetes
-  apt_repository:
-    repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+  deb822_repository:
+    name: kubernetes
+    types: deb
+    uris: https://pkgs.k8s.io/core:/stable:/v1.32/deb/
+    suites: [/]
     state: present
-    filename: kubernetes.list
+    enabled: yes
+    architectures: arm64
+    signed_by: https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key
 
 - name: Install Kubernetes binaries
-  apt: 
+  ansible.builtin.apt:
     name: "{{ packages }}"
     state: present
-    update_cache: yes
+    update_cache: true
   vars:
     packages:
-      - "kubelet={{ KUBERNETES_VERSION }}-00"
-      - "kubeadm={{ KUBERNETES_VERSION }}-00"
-      - "kubectl={{ KUBERNETES_VERSION }}-00"
+      - kubelet={{ KUBERNETES_VERSION }}-1.1
+      - kubeadm={{ KUBERNETES_VERSION }}-1.1
+      - kubectl={{ KUBERNETES_VERSION }}-1.1
 
-- name: start containerd
-  systemd: 
+- name: Start containerd
+  ansible.builtin.systemd:
     name: containerd
     state: restarted
-    daemon_reload: yes
+    daemon_reload: true
 
-- name: start kubelet
-  systemd: 
+- name: Start kubelet
+  ansible.builtin.systemd:
     name: kubelet
     state: restarted
-    daemon_reload: yes
+    daemon_reload: true

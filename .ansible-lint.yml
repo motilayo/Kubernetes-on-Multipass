@@ -1,0 +1,13 @@
+---
+# .ansible-lint
+
+exclude_paths:
+  - .github/
+  - create/control/kubeadm-config-template.j2
+  - create/cloud-init-template.j2
+  - create/cloud-init.yaml
+  - create/loadbalancer/cloud-init-template.j2
+  - create/loadbalancer/cloud-init.yaml
+  - create/loadbalancer/haproxy-cfg-template.j2
+
+var_naming_pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
