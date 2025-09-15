@@ -1,106 +1,103 @@
 ---
-- name: create Multipass VMs for a K8s cluster
+- name: Create Multipass VMs for a K8s cluster
   hosts: localhost
   tasks:
-  - name: create ssh key directory
-    become: false
-    file:
-      path: "~/.ssh/k8s-nodes"
-      state: directory
-    register: ssh_key_path
+    - name: Create ssh key directory
+      become: false
+      ansible.builtin.file:
+        path: ~/.ssh/k8s-nodes
+        state: directory
+      register: ssh_key_path
 
-  - name: generate SHH key
-    openssh_keypair:
-      path: "{{ ssh_key_path.path }}/id_ssh_rsa"
-      type: rsa
-      size: 4096
-      state: present
-      force: no
-      regenerate: never
-    register: sshkey
+    - name: Generate SSH key
+      community.crypto.openssh_keypair:
+        path: "{{ ssh_key_path.path }}/id_ssh_rsa"
+        type: rsa
+        size: 4096
+        state: present
+        force: false
+        regenerate: never
+      register: sshkey
 
-  - name: create inventory directory
-    file:
-      path: ../../inventories
-      state: "{{ item }}"
-      mode: 0755
-    delegate_to: localhost
-    with_items:
-      - absent
-      - directory
+    - name: Create inventory directory
+      ansible.builtin.file:
+        path: ../../inventories
+        state: "{{ item }}"
+        mode: "0755"
+      delegate_to: localhost
+      with_items:
+        - absent
+        - directory
 
-  - name: read k8s cluster VM configuration from file
-    include_vars:
-      file: vars.yaml
-      name: config
+    - name: Read k8s cluster VM configuration from file
+      ansible.builtin.include_vars:
+        file: vars.yaml
+        name: config
 
-  - name: configure vm
-    include_tasks: create-vm-tasks.yaml
-    vars:
-      clusterConfig: "{{ conf }}"
-    loop: "{{ config.nodeConfigurations }}"
-    loop_control:
-      loop_var: conf
+    - name: Configure vm
+      ansible.builtin.include_tasks: create-vm-tasks.yaml
+      vars:
+        clusterConfig: "{{ conf }}"
+      loop: "{{ config.nodeConfigurations }}"
+      loop_control:
+        loop_var: conf
 
-  - name: refreshing inventory
-    meta: refresh_inventory
+    - name: Refreshing inventory
+      ansible.builtin.meta: refresh_inventory
+    - name: Remove host from known_hosts
+      ansible.builtin.command: ssh-keygen -R "{{ hostvars[item].ansible_host }}"
+      with_items: "{{ groups['all'] }}"
 
-  - name: remove host from known_hosts
-    shell: ssh-keygen -R "{{ hostvars[item].ansible_host }}"
-    with_items: "{{ groups['all'] }}"
+    - name: Ensure servers are present in known_hosts file
+      ansible.builtin.known_hosts:
+        name: "{{ hostvars[item].ansible_host }}"
+        state: present
+        key: "{{ lookup('pipe', 'ssh-keyscan {{ hostvars[item].ansible_host }}') }}"
+        # hash_host: true
+      with_items: "{{ groups['all'] }}"
 
-  - name: Ensure servers are present in known_hosts file
-    known_hosts:
-      name: "{{ hostvars[item].ansible_host }}"
-      state: present
-      key: "{{ lookup('pipe', 'ssh-keyscan {{ hostvars[item].ansible_host }}') }}"
-      hash_host: true
-    with_items: "{{ groups['all'] }}"
-
-- name: initialize nodes
+- name: Initialize nodes
   hosts: control:worker
   become: true
   tasks:
-  - name: read k8s cluster VM configuration from file
-    include_vars:
-      file: vars.yaml
-      name: config
+    - name: Read k8s cluster VM configuration from file
+      ansible.builtin.include_vars:
+        file: vars.yaml
+        name: config
 
-  - name: set KUBERNETES VERSION in kubeadm config template
-    set_fact:
-      KUBERNETES_VERSION: "1.27.1"
+    - name: Set KUBERNETES VERSION in kubeadm config template
+      ansible.builtin.set_fact:
+        KUBERNETES_VERSION: 1.32.1
 
-  - name: install packages
-    include_tasks: install-packages-tasks.yaml
-
-- name: configure loadbalancer for control plane nodes
+    - name: Install packages
+      ansible.builtin.include_tasks: install-packages-tasks.yaml
+- name: Configure loadbalancer for control plane nodes
   hosts: loadbalancer
   tasks:
-    - name: configure lb
-      include_tasks: ../loadbalancer/configure-lb-tasks.yaml
+    - name: Configure lb
+      ansible.builtin.include_tasks: loadbalancer/configure-lb-tasks.yaml
       when: "'loadbalancer' in group_names"
 
-- name: initialize first control plane node
+- name: Initialize first control plane node
   hosts: control[0]
   become: true
   tasks:
     - name: Configure first control plane node
-      block: 
-        - name: check if node is part of cluster
+      block:
+        - name: Check if node is part of cluster
           become: false
-          shell: kubectl get nodes {{ inventory_hostname }}
+          ansible.builtin.command: kubectl get nodes {{ inventory_hostname }}
           delegate_to: localhost
       rescue:
-        - name: configure first control plane node since node is not part of cluster
-          include_tasks: control/init-first-ctrl-node-tasks.yaml
-
-- name: configure all other nodes
+        - name: Configure first control plane node since node is not part of cluster
+          ansible.builtin.include_tasks: control/init-first-ctrl-node-tasks.yaml
+- name: Configure all other nodes
   hosts: control:worker
   serial: 3
   become: true
   tasks:
     - name: Configure remaining nodes
-      block: 
+      block:
         - name: Check if node is part of cluster
           become: false
           shell: kubectl get nodes {{ inventory_hostname }}
@@ -108,17 +105,17 @@
       rescue:
         - name: ansible_failed_result
           debug:
-            msg: "{{ ansible_failed_result }}"
+            msg: "{{ ansible_failed_result.stderr }}"
         - name: Configure worker nodes if node isn't in the cluster
           include_tasks: join-cluster-tasks.yaml
 
-- name: install CNI
+- name: Install CNI
   hosts: localhost
   tasks:
     - name: Add cilium chart repo
       kubernetes.core.helm_repository:
         name: cilium
-        repo_url: "https://helm.cilium.io/"
+        repo_url: https://helm.cilium.io/
         repo_state: present
 
     - name: install cilium
@@ -127,7 +124,7 @@
         chart_ref: cilium/cilium
         chart_version: 1.13.4
         release_namespace: kube-system
-        create_namespace: yes
+        create_namespace: true
         release_state: present
         values:
           kubeProxyReplacement: strict
